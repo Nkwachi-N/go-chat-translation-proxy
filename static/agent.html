@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; background: #f5f5f5; height: 100vh; display: flex; justify-content: center; align-items: center; }
+
+        .container { width: 440px; background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: #059669; color: white; padding: 16px 20px; font-size: 16px; font-weight: 600; }
+
+        .screen { display: none; }
+        .screen.active { display: flex; flex-direction: column; }
+
+        /* Setup screen */
+        #setup { padding: 24px 20px; gap: 12px; }
+        #setup input, #setup select { padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+        #setup button { padding: 12px; background: #059669; color: white; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+        #setup button:hover { background: #047857; }
+
+        /* Rooms screen */
+        #rooms { padding: 20px; gap: 12px; }
+        #rooms .room-list { display: flex; flex-direction: column; gap: 8px; min-height: 200px; }
+        .room-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .room-item .info { font-size: 14px; color: #374151; }
+        .room-item .info .lang { font-size: 12px; color: #9ca3af; }
+        .room-item button { padding: 6px 14px; background: #059669; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; }
+        .room-item button:hover { background: #047857; }
+        .empty { color: #9ca3af; font-size: 14px; text-align: center; padding: 40px 0; }
+        .refresh-btn { padding: 10px; background: none; color: #059669; border: 1px solid #059669; border-radius: 8px; font-size: 13px; cursor: pointer; align-self: center; }
+        .refresh-btn:hover { background: #ecfdf5; }
+
+        /* Chat screen */
+        #chat { height: 500px; }
+        .chat-header { padding: 10px 20px; background: #f0fdf4; border-bottom: 1px solid #e5e7eb; font-size: 13px; color: #374151; }
+        .messages { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+        .message { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.4; word-wrap: break-word; }
+        .message.sent { align-self: flex-end; background: #059669; color: white; border-bottom-right-radius: 4px; }
+        .message.received { align-self: flex-start; background: #e5e7eb; color: #1f2937; border-bottom-left-radius: 4px; }
+        .message .from { font-size: 11px; font-weight: 600; margin-bottom: 4px; opacity: 0.7; }
+        .message .translated { font-size: 12px; opacity: 0.7; margin-top: 4px; font-style: italic; }
+        .message.system { align-self: center; background: none; color: #999; font-size: 12px; font-style: italic; padding: 4px; }
+
+        .chat-input { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid #eee; }
+        .chat-input input { flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+        .chat-input button { padding: 10px 16px; background: #059669; color: white; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+
+        .end-btn { padding: 8px 20px; background: none; color: #ef4444; border: 1px solid #ef4444; border-radius: 8px; font-size: 13px; cursor: pointer; margin: 0 20px 12px; align-self: center; }
+        .end-btn:hover { background: #fef2f2; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">Agent Dashboard</div>
+
+        <!-- Setup -->
+        <div id="setup" class="screen active">
+            <input type="text" id="nameInput" placeholder="Your name">
+            <select id="langInput">
+                <option value="">Select your language</option>
+                <option value="en">English</option>
+                <option value="pt">Portuguese</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="it">Italian</option>
+                <option value="ja">Japanese</option>
+                <option value="zh">Chinese</option>
+            </select>
+            <button onclick="setProfile()">Set Profile</button>
+        </div>
+
+        <!-- Room list -->
+        <div id="rooms" class="screen">
+            <div class="room-list" id="roomList"></div>
+            <button class="refresh-btn" onclick="loadRooms()">Refresh</button>
+        </div>
+
+        <!-- Chat -->
+        <div id="chat" class="screen">
+            <div class="chat-header" id="chatHeader"></div>
+            <div class="messages" id="messages"></div>
+            <div class="chat-input">
+                <input type="text" id="chatInput" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendMessage()">
+                <button onclick="sendMessage()">Send</button>
+            </div>
+            <button class="end-btn" onclick="endChat()">End Chat</button>
+        </div>
+    </div>
+
+    <script>
+        let token = '';
+        let currentRoomId = '';
+        let ws = null;
+        let myName = '';
+
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+
+        async function setProfile() {
+            const name = document.getElementById('nameInput').value.trim();
+            const language = document.getElementById('langInput').value;
+            if (!name || !language) return;
+
+            myName = name;
+
+            const resp = await fetch('/set-profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, language })
+            });
+
+            if (!resp.ok) {
+                alert('Failed to set profile: ' + await resp.text());
+                return;
+            }
+
+            const data = await resp.json();
+            token = data.token;
+
+            showScreen('rooms');
+            loadRooms();
+        }
+
+        async function loadRooms() {
+            const resp = await fetch('/rooms');
+            const rooms = await resp.json();
+            const list = document.getElementById('roomList');
+            list.innerHTML = '';
+
+            if (!rooms || rooms.length === 0) {
+                list.innerHTML = '<div class="empty">No waiting rooms</div>';
+                return;
+            }
+
+            rooms.forEach(room => {
+                const item = document.createElement('div');
+                item.className = 'room-item';
+                item.innerHTML = `
+                    <div class="info">
+                        ${room.customer_name}
+                        <span class="lang">${room.language || 'detecting...'}</span>
+                    </div>
+                `;
+                const btn = document.createElement('button');
+                btn.textContent = 'Join';
+                btn.onclick = () => joinRoom(room.room_id, room.customer_name);
+                item.appendChild(btn);
+                list.appendChild(item);
+            });
+        }
+
+        async function joinRoom(roomId, customerName) {
+            const resp = await fetch('/join-room', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ room_id: roomId })
+            });
+
+            if (!resp.ok) {
+                alert('Failed to join room: ' + await resp.text());
+                return;
+            }
+
+            currentRoomId = roomId;
+            document.getElementById('chatHeader').textContent = 'Chatting with ' + customerName;
+            document.getElementById('messages').innerHTML = '';
+            showScreen('chat');
+            connectWebSocket();
+        }
+
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${location.host}/ws?token=${token}&room_id=${currentRoomId}`);
+
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+
+                if (msg.type === 'message') {
+                    addMessage(msg.from, msg.content, msg.translated_content, false);
+                } else if (msg.type === 'chat_ended') {
+                    if (msg.reason === 'customer_left') {
+                        addSystemMessage('Customer has left the chat.');
+                        document.querySelector('.chat-input').style.display = 'none';
+                        document.querySelector('.end-btn').style.display = 'none';
+                        setTimeout(() => backToRooms(), 3000);
+                    }
+                } else if (msg.type === 'error') {
+                    addSystemMessage('Error: ' + msg.message);
+                }
+            };
+
+            ws.onclose = () => {
+                addSystemMessage('Disconnected.');
+            };
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const content = input.value.trim();
+            if (!content || !ws) return;
+
+            ws.send(JSON.stringify({ content }));
+            addMessage(myName, content, '', true);
+            input.value = '';
+        }
+
+        async function endChat() {
+            await fetch('/end-chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ room_id: currentRoomId })
+            });
+            addSystemMessage('You ended the chat.');
+            document.querySelector('.chat-input').style.display = 'none';
+            document.querySelector('.end-btn').style.display = 'none';
+            setTimeout(() => backToRooms(), 2000);
+        }
+
+        function backToRooms() {
+            if (ws) { ws.close(); ws = null; }
+            currentRoomId = '';
+            document.querySelector('.chat-input').style.display = '';
+            document.querySelector('.end-btn').style.display = '';
+            showScreen('rooms');
+            loadRooms();
+        }
+
+        function addMessage(from, content, translated, sent) {
+            const div = document.createElement('div');
+            div.className = 'message ' + (sent ? 'sent' : 'received');
+
+            if (!sent) {
+                const fromEl = document.createElement('div');
+                fromEl.className = 'from';
+                fromEl.textContent = from;
+                div.appendChild(fromEl);
+            }
+
+            const text = document.createElement('span');
+            text.textContent = content;
+            div.appendChild(text);
+
+            // Agent sees both original + translated
+            if (!sent && translated) {
+                const trans = document.createElement('div');
+                trans.className = 'translated';
+                trans.textContent = translated;
+                div.appendChild(trans);
+            }
+
+            appendToMessages(div);
+        }
+
+        function addSystemMessage(text) {
+            const div = document.createElement('div');
+            div.className = 'message system';
+            div.textContent = text;
+            appendToMessages(div);
+        }
+
+        function appendToMessages(el) {
+            const container = document.getElementById('messages');
+            container.appendChild(el);
+            container.scrollTop = container.scrollHeight;
+        }
+    </script>
+</body>
+</html>

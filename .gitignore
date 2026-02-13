@@ -1,0 +1,16 @@
+# Binary
+chat-translation-proxy
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# Environment
+.env
+
+# Claude Code
+.claude/
