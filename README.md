@@ -12,7 +12,7 @@ Building backend feels closer to the product than frontend ever did. How the API
 
 Even though this is a learning project, I tried to treat every decision seriously. I questioned the architecture, pushed back when something felt wrong, and kept coming back to simplicity and readability as my guiding principles.
 
-The guiding principle throughout: **if I can't explain why something exists, it probably shouldn't.**
+
     
 ## What It Does
 
